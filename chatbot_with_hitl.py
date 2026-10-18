@@ -1,9 +1,6 @@
-# backend.py
-
 from langgraph.graph import StateGraph, START
 from typing import TypedDict, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -20,7 +17,7 @@ load_dotenv()
 # 1. LLM
 # -------------------
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile", 
+    model="openai/gpt-oss-120b", 
     temperature=0,
     groq_api_key=os.getenv("GROQ_API_KEY")
 )
@@ -51,7 +48,6 @@ def purchase_stock(symbol: str, quantity: int) -> dict:
     Before confirming the purchase, this tool will interrupt
     and wait for a human decision ("yes" / anything else).
     """
-    # This pauses the graph and returns control to the caller
     decision = interrupt(f"Approve buying {quantity} shares of {symbol}? (yes/no)")
 
     if isinstance(decision, str) and decision.lower() == "yes":
@@ -61,7 +57,6 @@ def purchase_stock(symbol: str, quantity: int) -> dict:
             "symbol": symbol,
             "quantity": quantity,
         }
-    
     else:
         return {
             "status": "cancelled",
@@ -104,7 +99,6 @@ graph.add_node("chat_node", chat_node)
 graph.add_node("tools", tool_node)
 
 graph.add_edge(START, "chat_node")
-
 graph.add_conditional_edges("chat_node", tools_condition)
 graph.add_edge("tools", "chat_node")
 
@@ -114,8 +108,6 @@ chatbot = graph.compile(checkpointer=memory)
 # 7. Simple usage example (CLI with HITL)
 # -------------------
 if __name__ == "__main__":
-    
-    # Use a fixed thread_id so the conversation is persisted in memory
     thread_id = "demo-thread"
 
     while True:
@@ -124,7 +116,6 @@ if __name__ == "__main__":
             print("Goodbye!")
             break
 
-        # Build initial state for this turn
         state = {"messages": [HumanMessage(content=user_input)]}
 
         # Run the graph (may hit an interrupt)
@@ -137,12 +128,11 @@ if __name__ == "__main__":
         interrupts = result.get("__interrupt__", [])
 
         if interrupts:
-            # Our interrupt payload is the string we passed to interrupt(...)
             prompt_to_human = interrupts[0].value
             print(f"HITL: {prompt_to_human}")
             decision = input("Your decision: ").strip().lower()
 
-            # Resume graph with the human decision ("yes" / "no" / whatever)
+            # Resume graph with the human decision
             result = chatbot.invoke(
                 Command(resume=decision),
                 config={"configurable": {"thread_id": thread_id}},
